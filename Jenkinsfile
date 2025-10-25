@@ -8,7 +8,6 @@ pipeline {
 
     options {
         timestamps()        // Добавляет время к логам
-        ansiColor('xterm')  // Цветной вывод
         skipStagesAfterUnstable()
     }
 
