@@ -1,0 +1,78 @@
+pipeline {
+    agent any  // Можно заменить на agent { docker { image 'python:3.12-alpine' } }
+
+    environment {
+        APP_NAME = 'my_app'
+        DOCKER_IMAGE = "myrepo/${APP_NAME}:${env.BUILD_NUMBER}"
+    }
+
+    options {
+        timestamps()        // Добавляет время к логам
+        ansiColor('xterm')  // Цветной вывод
+        skipStagesAfterUnstable()
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                echo '📦 Получаем код из репозитория...'
+                checkout scm
+            }
+        }
+
+        stage('Build') {
+            steps {
+                echo '🔧 Собираем проект...'
+                sh '''
+                    docker build -t $DOCKER_IMAGE .
+                '''
+            }
+        }
+
+        stage('Test') {
+            steps {
+                echo '🧪 Запускаем тесты...'
+                sh '''
+                    docker run --rm $DOCKER_IMAGE pytest -v || exit 1
+                '''
+            }
+        }
+
+        stage('Push Image') {
+            when {
+                branch 'main'
+            }
+            steps {
+                echo '📤 Отправляем образ в Docker Registry...'
+                withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                    sh '''
+                        echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+                        docker push $DOCKER_IMAGE
+                    '''
+                }
+            }
+        }
+
+        stage('Deploy') {
+            when {
+                branch 'main'
+            }
+            steps {
+                echo '🚀 Деплой приложения...'
+                sh '''
+                    docker compose down
+                    docker compose up -d
+                '''
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "✅ Сборка #${env.BUILD_NUMBER} завершена успешно!"
+        }
+        failure {
+            echo "❌ Ошибка при сборке #${env.BUILD_NUMBER}"
+        }
+    }
+}
